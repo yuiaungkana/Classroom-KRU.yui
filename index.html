@@ -1449,5 +1449,78 @@ function copyCsv(){
    th.appendChild(w)})};
 })();
 </script>
+<script>
+/* ===== แจ้งเตือนนักเรียน: ข้อความ/ผลตรวจจากครู + งานที่ต้องแก้ไข (กดแล้วพาไปที่งานนั้น) ===== */
+(function(){
+ const key=()=>'lms_stu_seen_'+(me?me.id:'');
+ const loadSeen=()=>{try{return JSON.parse(localStorage.getItem(key())||'{}')}catch(e){return{}}};
+ const saveSeen=o=>{try{localStorage.setItem(key(),JSON.stringify(o))}catch(e){}};
+ const sg=x=>[x.status,x.score,x.feedback||''].join('|');
+
+ function list(){
+  if(role!=='student'||!me)return[];
+  const seenO=loadSeen(),out=[];
+  S.items.forEach(it=>{
+   if(it.type==='material')return;
+   const x=sub(it.id,me.id);if(!x)return;
+   const rev=x.status==='revision',fb=(x.feedback||'').trim();
+   if(!rev&&!(fb&&x.status==='graded'))return;
+   const s=sg(x),unread=seenO[it.id]!==s;
+   if(!rev&&!unread)return;
+   out.push({it,x,rev,fb,s,unread})});
+  return out.sort((a,b)=>(b.rev-a.rev))}
+
+ let prev=null,prevMe=null;
+ function paint(){
+  if(role!=='student'||!me)return;
+  const nb=$('nb'),nl=$('nl');if(!nb||!nl)return;
+  const L=list(),n=L.length;
+  nb.classList.toggle('hidden',!n);
+  nb.textContent=n>99?'99+':String(n);
+  nb.style.width='auto';nb.style.minWidth='16px';nb.style.padding='0 3px';
+  nl.innerHTML=L.map(r=>{
+   const t=r.fb.length>80?r.fb.slice(0,80)+'…':r.fb;
+   return '<button type="button" data-ni="'+esc(r.it.id)+'" class="block w-full text-left p-2 rounded-xl '+(r.rev?'bg-rose-50 hover:bg-rose-100 border border-rose-200':'bg-slate-50 hover:bg-pink-50')+'">'
+    +(r.rev?'✏️ <b class="text-rose-600">ต้องแก้ไข:</b> ':'💬 ครูส่งข้อความ: ')+'<b>'+esc(r.it.title)+'</b>'
+    +(t?'<div class="text-slate-600 mt-0.5">“'+esc(t)+'”</div>':'')
+    +'<div class="text-[9px] text-slate-400">แตะเพื่อไปที่งานนี้'+(r.rev?' • แสดงจนกว่าจะส่งแก้ไข':'')+'</div></button>'}).join('')
+   ||'<div class="text-center text-slate-400 py-3">ไม่มีการแจ้งเตือน</div>';
+
+  /* ป้ายเตือนด้านบนหน้า: งานที่ต้องแก้ไข */
+  const rv=L.filter(r=>r.rev),v=$('view');
+  if(rv.length&&v&&!v.querySelector('[data-rvb]')){
+   v.insertAdjacentHTML('afterbegin','<div data-rvb class="card border-2 border-rose-200 bg-rose-50 p-4 space-y-2 text-xs"><b class="text-rose-600">✏️ คุณมีงานที่ครูให้แก้ไข '+rv.length+' งาน</b>'
+    +rv.map(r=>'<button type="button" data-ni="'+esc(r.it.id)+'" class="bb block w-full text-left bg-white rounded-xl p-2 font-bold">'+esc(r.it.title)+(r.fb?'<div class="font-normal text-slate-600">💬 '+esc(r.fb)+'</div>':'')+'<div class="font-normal text-sky-600 underline">แตะเพื่อไปแก้ไข</div></button>').join('')+'</div>')}
+
+  /* เด้งแจ้งเมื่อมีข้อความ/ผลตรวจใหม่เข้ามา */
+  const keys=L.filter(r=>r.unread).map(r=>r.it.id+'|'+r.s);
+  if(prevMe!==me.id){prevMe=me.id;prev=null}
+  if(prev&&keys.some(k=>!prev.has(k)))toast(L.some(r=>r.rev&&r.unread)?'✏️ ครูให้แก้ไขงาน ดูที่ 🔔':'💬 ครูส่งข้อความถึงคุณ ดูที่ 🔔');
+  prev=new Set(keys)}
+
+ function openTask(id){
+  const it=S.items.find(i=>i.id===id);
+  if(!it)return toast('ไม่พบรายการนี้ (อาจถูกลบแล้ว)');
+  const x=sub(id,me.id);if(x){const o=loadSeen();o[id]=sg(x);saveSeen(o)}
+  $('nd').classList.add('hidden');
+  go(it.type);
+  setTimeout(()=>{
+   const h=[...document.querySelectorAll('#view .card h3')].find(h=>h.textContent.trim()===String(it.title).trim()),c=h&&h.closest('.card');
+   if(c){c.scrollIntoView({behavior:'smooth',block:'center'});c.style.boxShadow='0 0 0 4px #fb7185';setTimeout(()=>{c.style.boxShadow=''},2500)}},60)}
+
+ document.addEventListener('click',e=>{
+  const b=e.target.closest('[data-ni]');
+  if(b&&role==='student'&&me)openTask(b.dataset.ni)});
+
+ /* ปุ่ม "ล้าง" ในกล่องแจ้งเตือน (นักเรียน): ล้างข้อความที่อ่านแล้ว ส่วนงานที่ต้องแก้ไขยังค้างอยู่จนกว่าจะส่งใหม่ */
+ $('nd').addEventListener('click',e=>{
+  const b=e.target.closest('button');
+  if(role==='student'&&me&&b&&b.textContent.trim()==='ล้าง'){
+   const o=loadSeen();list().forEach(r=>{o[r.it.id]=r.s});saveSeen(o);paint()}});
+
+ const _r=window.render;
+ window.render=function(){_r.apply(this,arguments);try{paint()}catch(e){}};
+})();
+</script>
 </body>
 </html>
