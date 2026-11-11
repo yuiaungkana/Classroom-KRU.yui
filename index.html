@@ -1424,5 +1424,30 @@ function copyCsv(){
   finally{if(S.subs[iid]&&S.subs[iid][sid]===ph){if(bak)S.subs[iid][sid]=bak;else delete S.subs[iid][sid]}}};
 })();
 </script>
+<script>
+/* ===== ครูจัดลำดับงานในหน้าภาพรวม (ปุ่ม ◀ ▶ ที่หัวคอลัมน์) ===== */
+(function(){
+ window.moveTask=function(id,dir){
+  if(role!=='teacher')return;
+  const T=tasks(),i=T.findIndex(t=>t.id===id),j=i+dir;
+  if(i<0)return;
+  if(j<0||j>=T.length)return toast(dir<0?'อยู่ซ้ายสุดแล้ว':'อยู่ขวาสุดแล้ว');
+  const a=S.items.indexOf(T[i]),b=S.items.indexOf(T[j]);
+  [S.items[a],S.items[b]]=[S.items[b],S.items[a]];
+  save();render()};
+
+ const _r=window.render;
+ window.render=function(){
+  _r.apply(this,arguments);
+  if(role!=='teacher'||tab!=='dashboard')return;
+  const ths=document.querySelectorAll('#view thead th'),T=tasks();
+  ths.forEach((th,k)=>{
+   const t=T[k-2];if(k<2||!t||th.querySelector('[data-mv]'))return;
+   const w=document.createElement('div');
+   w.dataset.mv='1';w.className='flex justify-center gap-1 mt-1';
+   w.innerHTML=`<button title="เลื่อนไปซ้าย" onclick="moveTask('${t.id}',-1)" class="bb px-1.5 rounded-lg bg-slate-100">◀</button><button title="เลื่อนไปขวา" onclick="moveTask('${t.id}',1)" class="bb px-1.5 rounded-lg bg-slate-100">▶</button>`;
+   th.appendChild(w)})};
+})();
+</script>
 </body>
 </html>
