@@ -1624,5 +1624,22 @@ body.gscrollmode #modal canvas.mk,body.gscrollmode #modal canvas.pk{touch-action
   try{layout()}catch(e){console.error(e)}};
 })();
 </script>
+<script>
+/* สแกนเอกสาร: ตัดขอบอัตโนมัติทันทีหลังถ่าย/เลือกรูป แล้วให้ปรับมุมเองได้ */
+(function(){
+ const modal=$('modal');
+ let last='';
+ new MutationObserver(()=>{
+  const h=modal.querySelector('h3'),t=h?h.textContent:'';
+  if(/สแกนเอกสาร/.test(t)){last='';return}
+  if(!/ปรับกรอบหน้า/.test(t))return;
+  const bk=modal.querySelector('[data-a="back"]'),au=modal.querySelector('[data-a="auto"]');
+  /* ปุ่ม "ลบหน้านี้" = หน้าใหม่ที่ยังไม่กดตกลง, ทำครั้งเดียวต่อหน้า */
+  if(!bk||!au||bk.textContent.trim()!=='ลบหน้านี้'||last===t)return;
+  last=t;
+  setTimeout(()=>au.click(),0)
+ }).observe(modal,{childList:true});
+})();
+</script>
 </body>
 </html>
