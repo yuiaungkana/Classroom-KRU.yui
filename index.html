@@ -1641,5 +1641,36 @@ body.gscrollmode #modal canvas.mk,body.gscrollmode #modal canvas.pk{touch-action
  }).observe(modal,{childList:true});
 })();
 </script>
+<script>
+/* มุมนักเรียน: แจ้งชัดเจนเมื่อส่งงาน/ส่งงานที่แก้ไขแล้วสำเร็จ */
+(function(){
+ /* 1) ป๊อปอัปยืนยัน (ค้างจนกว่านักเรียนกดตกลง) */
+ const _send=window.send;
+ window.send=async function(id){
+  const before=me?sub(id,me.id):null,wasRev=before&&before.status==='revision';
+  await _send.apply(this,arguments);
+  const x=me?sub(id,me.id):null;
+  if(!x||x.status!=='submitted')return;
+  if(before&&before.status==='submitted'&&before.at===x.at)return; /* ไม่สำเร็จ ถูกย้อนกลับ */
+  const it=S.items.find(i=>i.id===id);if(!it)return;
+  $('modal').innerHTML='<div class="card border-4 border-emerald-200 p-6 w-full max-w-sm text-center space-y-3">'
+   +'<div class="text-5xl">✅</div>'
+   +'<h3 class="mali font-bold text-lg">'+(wasRev?'ส่งงานที่แก้ไขแล้ว':before?'บันทึกการแก้ไขแล้ว':'ส่งงานเรียบร้อย')+'</h3>'
+   +'<p class="text-xs font-bold">'+esc(it.title)+'</p>'
+   +'<p class="text-[11px] text-slate-500">'+esc(new Date(x.at).toLocaleString('th-TH'))+(x.late?' • ส่งช้า':'')+'<br>รอครูตรวจ</p>'
+   +'<button type="button" onclick="closeModal()" class="bb w-full py-2 bg-emerald-500 text-white rounded-xl text-xs font-bold">ตกลง</button></div>';
+  $('modal').classList.remove('hidden')};
+
+ /* 2) แถบสถานะค้างบนการ์ดงาน หลังส่งแล้วและยังไม่ถูกตรวจ */
+ const _sb=window.studentBox;
+ window.studentBox=function(it){
+  const h=_sb.apply(this,arguments);
+  if(!me||it.type==='test'||it.type==='exercise')return h;
+  const s=sub(it.id,me.id);
+  if(!s||s.status!=='submitted')return h;
+  return '<div class="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl p-2">✅ ส่งงานแล้ว เมื่อ '
+   +esc(new Date(s.at).toLocaleString('th-TH'))+' • รอครูตรวจ'+(s.late?' (ส่งช้า)':'')+'</div>'+h};
+})();
+</script>
 </body>
 </html>
