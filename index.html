@@ -1522,5 +1522,107 @@ function copyCsv(){
  window.render=function(){_r.apply(this,arguments);try{paint()}catch(e){}};
 })();
 </script>
+<style>
+#modal .gcard{display:flex;flex-direction:column;overflow:hidden!important}
+#modal .gcard>*{flex:none}
+#modal .gcard>.gscroll{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+#modal .gcard>[data-gtb]{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem .9rem;box-shadow:0 4px 8px -4px rgba(0,0,0,.2)}
+#modal .gcard>[data-gtb]>*{margin-top:0!important}
+#modal .gcard>[data-gtb]>p{display:none}
+#modal.gfs{padding:0!important;align-items:stretch!important}
+#modal.gfs>.gcard{max-width:none!important;width:100%!important;height:100%!important;max-height:none!important;border-radius:0!important;border-width:0!important;
+ padding-top:max(1.25rem,env(safe-area-inset-top))!important;padding-bottom:max(1.25rem,env(safe-area-inset-bottom))!important}
+body.gscrollmode #modal canvas.mk,body.gscrollmode #modal canvas.pk{touch-action:pan-y pinch-zoom!important}
+</style>
+<script>
+(function(){
+ let FS=false,E=null,warnedPk=false;
+ const btn='bb px-2.5 py-1 rounded-lg border font-bold';
+ const curSub=()=>gt?(S.subs[gt.iid]||{})[gt.sid]:null;
+ const pt=(c,e)=>{const r=c.getBoundingClientRect();return[(e.clientX-r.left)*c.width/r.width,(e.clientY-r.top)*c.height/r.height]};
+ const blobImg=b=>new Promise((ok,no)=>{const u=URL.createObjectURL(b),im=new Image();im.onload=()=>{URL.revokeObjectURL(u);ok(im)};im.onerror=()=>{URL.revokeObjectURL(u);no(new Error('อ่านรูปไม่ได้'))};im.src=u});
+
+ function applyFS(){
+  $('modal').classList.toggle('gfs',FS);
+  const b=$('gm-fs');if(b)b.textContent=FS?'🗗 ออกเต็มจอ':'⛶ เต็มจอ'}
+ window.gFull=function(){FS=!FS;applyFS()};
+ const _cm=window.closeModal;
+ window.closeModal=function(){FS=false;$('modal').classList.remove('gfs');document.body.classList.remove('gscrollmode');_cm.apply(this,arguments)};
+
+ const _sp=window.setPen;
+ window.setPen=function(k,v){
+  if(k==='c'&&PEN.m==='scroll')PEN.m='pen';
+  _sp.apply(this,arguments);
+  document.body.classList.toggle('gscrollmode',PEN.m==='scroll')};
+ const _pt=window.paintTools;
+ window.paintTools=function(){_pt.apply(this,arguments);const b=$('gm-sc');if(b)b.style.background=PEN.m==='scroll'?'#fbcfe8':'#fff'};
+
+ window.gClearAll=function(){
+  if(!confirm('ลบรอยเขียนทั้งหมดของงานนี้ (รวมที่บันทึกไว้เดิม)? กด "บันทึก" เพื่อยืนยัน'))return;
+  const marks=(curSub()||{}).marks||[];
+  document.querySelectorAll('#modal canvas.mk').forEach(c=>{
+   c.getContext('2d').clearRect(0,0,c.width,c.height);
+   const mo=c.parentElement.querySelector('.mo');if(mo)mo.style.display='none';
+   c.dataset.dirty=marks.some(m=>m.i===+c.dataset.i)?'1':''});
+  if(typeof PDFS==='object'&&PDFS)Object.entries(PDFS).forEach(([i,list])=>(list||[]).forEach(o=>{
+   o.mk.getContext('2d').clearRect(0,0,o.mk.width,o.mk.height);
+   o.mk.dataset.dirty=marks.some(m=>m.i===+i&&m.pg===o.pg&&m.flat)?'1':''}));
+  toast('ลบรอยเขียนทั้งหมดแล้ว (กดบันทึกเพื่อยืนยัน)')};
+
+ const cut=(c,a,b)=>{const g=c.getContext('2d');g.save();g.globalCompositeOperation='destination-out';g.lineCap='round';g.lineJoin='round';
+  g.lineWidth=Math.max(10,c.width/160*PSZ[PEN.s][1]*5);g.beginPath();g.moveTo(a[0],a[1]);g.lineTo(b[0],b[1]);g.stroke();g.restore();c.dataset.dirty='1'};
+ async function loadOld(c,mo){
+  try{
+   const m=((curSub()||{}).marks||[]).find(k=>k.i===+c.dataset.i);
+   const im=await blobImg(new Blob([await pdfBytes(fileId(m.url))]));
+   c.getContext('2d').drawImage(im,0,0,c.width,c.height);
+   mo.style.display='none';c.dataset.dirty='1';return true
+  }catch(e){toast('โหลดรอยเขียนเดิมเพื่อลบไม่สำเร็จ');return false}}
+ window.addEventListener('pointerdown',e=>{
+  const c=e.target;
+  if(!c||!c.matches||!c.matches('#modal canvas.mk,#modal canvas.pk'))return;
+  if(PEN.m==='scroll'){e.stopPropagation();return}
+  if(PEN.m!=='eraser')return;
+  e.preventDefault();e.stopPropagation();
+  try{c.setPointerCapture(e.pointerId)}catch(_){}
+  const p=pt(c,e),st={c,last:p,id:e.pointerId,loading:false};
+  if(c.dataset.dirty==='1'){E=st;cut(c,p,p);return}
+  if(c.classList.contains('pk')){if(!warnedPk){warnedPk=true;toast('PDF หน้าที่บันทึกแล้วลบเฉพาะจุดไม่ได้ ใช้ "ลบทั้งหมด" แล้วเขียนใหม่')}return}
+  const mo=c.parentElement.querySelector('.mo');if(!mo)return;
+  E=st;st.loading=true;
+  loadOld(c,mo).then(ok=>{st.loading=false;if(!ok){if(E===st)E=null;return}if(E===st)cut(c,st.last,st.last)})
+ },true);
+ window.addEventListener('pointermove',e=>{
+  if(!E||e.pointerId!==E.id)return;
+  e.stopPropagation();
+  const p=pt(E.c,e);
+  if(!E.loading)cut(E.c,E.last,p);
+  E.last=p},true);
+ ['pointerup','pointercancel'].forEach(t=>window.addEventListener(t,()=>{E=null},true));
+
+ function layout(){
+  const card=$('modal').firstElementChild,pen=$('gm-pen');
+  if(!card||!pen)return;
+  const tb=pen.closest('.bg-slate-50');
+  if(!tb||tb.parentElement!==card||card.querySelector(':scope>.gscroll'))return;
+  const kids=[...card.children],head=kids[0],sc=document.createElement('div');
+  tb.setAttribute('data-gtb','1');
+  sc.className='gscroll space-y-3';
+  kids.forEach(k=>{if(k!==head&&k!==tb)sc.appendChild(k)});
+  card.appendChild(sc);card.classList.add('gcard');
+  const er=$('gm-er');
+  if(er){er.textContent='🧽 ลบเฉพาะจุด';
+   if(!$('gm-ca'))er.insertAdjacentHTML('afterend','<button type="button" id="gm-ca" onclick="gClearAll()" class="'+btn+' bg-rose-50 text-rose-600">🗑️ ลบทั้งหมด</button>')}
+  const anchor=$('gsig');
+  if(anchor&&!$('gm-sc'))anchor.insertAdjacentHTML('beforebegin','<button type="button" id="gm-sc" onclick="setPen(\'m\',\'scroll\')" class="'+btn+'">✋ เลื่อนดู</button>');
+  if(anchor&&!$('gm-fs'))anchor.insertAdjacentHTML('beforebegin','<button type="button" id="gm-fs" onclick="gFull()" class="'+btn+' bg-sky-100">⛶ เต็มจอ</button>');
+  document.body.classList.toggle('gscrollmode',PEN.m==='scroll');
+  paintTools();applyFS()}
+ const _og=window.openGrade;
+ window.openGrade=function(){
+  _og.apply(this,arguments);
+  try{layout()}catch(e){console.error(e)}};
+})();
+</script>
 </body>
 </html>
