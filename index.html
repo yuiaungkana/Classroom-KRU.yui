@@ -1672,5 +1672,120 @@ body.gscrollmode #modal canvas.mk,body.gscrollmode #modal canvas.pk{touch-action
    +esc(new Date(s.at).toLocaleString('th-TH'))+' • รอครูตรวจ'+(s.late?' (ส่งช้า)':'')+'</div>'+h};
 })();
 </script>
+<script>
+/* ===== ศูนย์ สำรอง / กู้คืนข้อมูล ===== */
+(function(){
+ const LK='lms_autobk',MAX=10,bt='bb w-full py-3 rounded-full text-white font-bold text-sm';
+ const fmt=t=>{const d=new Date(+t);return d.toLocaleDateString('th-TH')+' '+d.toLocaleTimeString('th-TH')};
+ const kb=n=>n>=1048576?(n/1048576).toFixed(1)+' MB':Math.max(1,Math.round(n/1024))+' KB';
+ const snapStr=()=>(stash(),JSON.stringify({rooms:S.rooms,data:S.data,submissions:S.subs}));
+ const loadL=()=>{try{return JSON.parse(localStorage.getItem(LK)||'[]')}catch(e){return[]}};
+ function saveL(a){while(a.length){try{localStorage.setItem(LK,JSON.stringify(a));return}catch(e){a.pop()}}}
+ const mark=()=>{try{localStorage.setItem('lms_lastbk',Date.now())}catch(e){}};
+ function snap(kind){
+  if(role!=='teacher'||!S.rooms)return;
+  const s=snapStr(),a=loadL();
+  if(a[0]&&a[0].s===s)return;
+  a.unshift({t:Date.now(),k:kind,z:new Blob([s]).size,s});
+  saveL(a.slice(0,MAX))}
+ let lastAuto=0;
+ setInterval(()=>{if(role==='teacher'&&AUTH&&Date.now()-lastAuto>20*60*1000){lastAuto=Date.now();snap('อัตโนมัติ')}},60000);
+
+ /* รองรับทั้งไฟล์สำรองของหน้าเว็บ และไฟล์สำรองรูปแบบ core จาก Drive */
+ function norm(d){
+  if(d&&d.data&&!Array.isArray(d.data)&&Array.isArray(d.data.rooms))d=d.data;
+  if(d&&Array.isArray(d.rooms)&&d.rooms.length&&d.data&&typeof d.data==='object'&&!Array.isArray(d.data))
+   return{rooms:d.rooms,data:d.data,subs:d.submissions||d.subs||{}};
+  if(d&&Array.isArray(d.rooms)&&d.rooms.length&&Array.isArray(d.items)){
+   const g={},r0=d.rooms[0].id;d.rooms.forEach(r=>g[r.id]={items:[],students:[],bonus:[]});
+   ['items','students','bonus'].forEach(n=>(d[n]||[]).forEach(x=>g[x.rid&&g[x.rid]?x.rid:r0][n].push(x)));
+   return{rooms:d.rooms,data:g,subs:d.subs||d.submissions||{}}}
+  return null}
+
+ async function applyBk(raw,label){
+  const d=norm(raw);
+  if(!d)return toast('ไม่ใช่ไฟล์สำรองของระบบนี้');
+  if(!confirm('กู้คืน '+label+'?\nข้อมูลห้องเรียน รายชื่อ งาน และคะแนนปัจจุบันจะถูกแทนที่ (ระบบเก็บสำรองปัจจุบันไว้ในเครื่องให้ก่อน)'))return;
+  snap('ก่อนกู้คืน');
+  S.rooms=d.rooms;S.data=d.data;S.subs=d.subs;
+  S.rooms.forEach(r=>{const x=S.data[r.id]||(S.data[r.id]={});x.items=x.items||[];x.students=x.students||[];x.bonus=x.bonus||[]});
+  S.cur=null;repoint();
+  try{localStorage.setItem('lms_cur',S.cur)}catch(e){}
+  save();render();closeModal();
+  toast('กู้คืนข้อมูลแล้ว กำลังส่งผลงานนักเรียนขึ้นเซิร์ฟเวอร์...');
+  if(online()&&KEY){
+   let ok=0,bad=0;inflight++;subVer++;
+   try{
+    for(const [iid,o] of Object.entries(S.subs))for(const sid of Object.keys(o)){
+     const r=await api({action:'putSub',iid,sid,sub:o[sid]}).catch(()=>({ok:false}));
+     r.ok?ok++:bad++}
+   }finally{inflight--;subVer++}
+   toast(bad?`ส่งผลงานสำเร็จ ${ok} ไม่สำเร็จ ${bad} รายการ`:`กู้คืนครบ (ผลงาน ${ok} รายการ)`)}}
+
+ const rowH=(t,id)=>'<div class="flex items-center justify-between gap-2 rounded-2xl border-2 border-slate-200 bg-white p-3"><span class="text-xs">'+t+'</span><button type="button" data-bk="'+id+'" class="bb shrink-0 px-4 py-2 rounded-full bg-amber-100 text-amber-800 font-bold text-xs">กู้คืน</button></div>';
+
+ async function loadDrive(){
+  const el=$('bk_d');if(!el)return;
+  if(!online()||!KEY){el.textContent='ต้องเข้าสู่ระบบครูก่อน';return}
+  try{
+   const r=await net(GAS_URL+'?action=listBackups&key='+encodeURIComponent(KEY),{},2);
+   if(!r.ok)throw new Error(r.error||'unsupported');
+   const h=(r.list||[]).map(x=>rowH(fmt(x.t)+' · '+kb(x.size),'D:'+esc(x.name))).join('')||'ยังไม่มีไฟล์สำรองบน Drive';
+   if($('bk_d'))$('bk_d').innerHTML=h
+  }catch(e){
+   if($('bk_d'))$('bk_d').innerHTML='ดึงรายการจาก Drive ไม่ได้ (ต้องเพิ่มโค้ด listBackups / getBackup ใน Code.gs แล้ว Deploy ใหม่) ปุ่มสำรองขึ้น Drive ยังใช้ได้ตามปกติ'}}
+
+ function draw(){
+  snap('อัตโนมัติ');
+  let last='';try{last=localStorage.getItem('lms_lastbk')||''}catch(e){}
+  const L=loadL();
+  $('modal').innerHTML='<div class="card border-4 border-pink-200 p-5 w-full max-w-md max-h-[92vh] overflow-y-auto space-y-3 text-sm">'
+   +'<h3 class="mali font-bold text-lg">🛟 สำรอง / กู้คืนข้อมูล</h3>'
+   +'<p class="text-xs text-slate-500">สำรองล่าสุด: '+(last?fmt(last):'ยังไม่เคย')+'<br>ไฟล์แนบอยู่บน Google Drive อยู่แล้ว ไฟล์สำรองเก็บเฉพาะข้อมูลและลิงก์</p>'
+   +'<button type="button" data-bk="dl" class="'+bt+' bg-teal-400">⬇️ ดาวน์โหลดไฟล์สำรอง (.json)</button>'
+   +'<hr><b>♻️ กู้คืนจากไฟล์</b>'
+   +'<input id="bk_f" type="file" accept=".json" class="w-full text-xs">'
+   +'<button type="button" data-bk="file" class="'+bt+' bg-amber-400">กู้คืนจากไฟล์ที่เลือก</button>'
+   +'<hr><b>🕒 สำรองอัตโนมัติในเครื่อง</b>'
+   +(L.map((x,i)=>rowH(fmt(x.t)+' · '+esc(x.k)+' · '+kb(x.z),'L'+i)).join('')||'<div class="text-xs text-slate-400">ยังไม่มี (ระบบสำรองให้ทุก 20 นาทีที่ครูใช้งาน)</div>')
+   +'<hr><b>☁️ สำรองบน Google Drive</b>'
+   +'<button type="button" data-bk="drive" class="'+bt+' bg-sky-500">☁️ สำรองขึ้น Drive ตอนนี้</button>'
+   +'<div id="bk_d" class="space-y-2 text-xs text-slate-500">กำลังโหลดรายการ...</div>'
+   +'<button type="button" data-bk="close" class="bb w-full py-3 rounded-full border-2 border-slate-200 bg-white font-bold">ปิด</button></div>';
+  $('modal').classList.remove('hidden');loadDrive()}
+
+ $('modal').addEventListener('click',async e=>{
+  const b=e.target.closest('[data-bk]');if(!b||role!=='teacher')return;
+  const k=b.dataset.bk;
+  if(k==='close')return closeModal();
+  if(k==='dl'){
+   const a=document.createElement('a');
+   a.href=URL.createObjectURL(new Blob([snapStr()],{type:'application/json'}));
+   a.download='classroom-lms-backup-'+new Date().toISOString().slice(0,10)+'.json';a.click();
+   mark();toast('ดาวน์โหลดไฟล์สำรองแล้ว');return}
+  if(k==='file'){
+   const f=$('bk_f').files[0];if(!f)return toast('เลือกไฟล์ก่อน');
+   let d;try{d=JSON.parse((await f.text()).replace(/^\uFEFF/,''))}catch(_){return toast('อ่านไฟล์ไม่ได้ (ไม่ใช่ JSON)')}
+   return applyBk(d,'ไฟล์ '+f.name)}
+  if(k==='drive'){
+   b.disabled=true;toast('กำลังสำรองขึ้น Drive...');
+   try{const r=await api({action:'backup'});toast(r.ok?'สำรองลง Drive แล้ว: '+r.name:'สำรองลง Drive ไม่สำเร็จ');if(r.ok)mark()}
+   catch(_){toast('สำรองลง Drive ไม่สำเร็จ')}
+   return draw()}
+  if(k[0]==='L'){
+   const a=loadL()[+k.slice(1)];if(!a)return;
+   let d;try{d=JSON.parse(a.s)}catch(_){return toast('ไฟล์สำรองเสียหาย')}
+   return applyBk(d,'สำรองเมื่อ '+fmt(a.t))}
+  if(k[0]==='D'){
+   const name=k.slice(2);toast('กำลังดาวน์โหลดไฟล์สำรอง...');
+   try{
+    const r=await net(GAS_URL+'?action=getBackup&name='+encodeURIComponent(name)+'&key='+encodeURIComponent(KEY),{},2);
+    if(!r.ok)throw new Error(r.error||'ไม่สำเร็จ');
+    return applyBk(typeof r.text==='string'?JSON.parse(r.text):r.data,'ไฟล์ '+name)
+   }catch(err){toast('ดึงไฟล์ไม่สำเร็จ: '+((err&&err.message)||''))}}});
+
+ window.restore=window.backup=function(){if(role==='teacher')draw()};
+})();
+</script
 </body>
 </html>
